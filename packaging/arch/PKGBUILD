@@ -1,0 +1,26 @@
+# Maintainer: winux contributors
+# Contributor: winux contributors
+
+pkgname=winux
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Windows PE executor for Linux — no Wine, no QEMU, no kernel module"
+arch=('x86_64')
+url="https://github.com/devfrp/winux"
+license=('MIT')
+depends=('glibc' 'libseccomp')
+makedepends=('gcc' 'make')
+optdepends=('mingw-w64-gcc: compile Windows PE test programs')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/devfrp/winux/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+    make clean
+    make
+}
+
+package() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+    make install DESTDIR="${pkgdir}" PREFIX=/usr
+}

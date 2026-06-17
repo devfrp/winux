@@ -1,0 +1,23 @@
+Package: winux
+Version: 1.0.0
+Section: devel
+Priority: optional
+Architecture: amd64
+Depends: libc6 (>= 2.28), libseccomp2 (>= 2.4), libpthread-stubs0-dev
+Recommends: gcc-mingw-w64-x86-64
+Maintainer: winux contributors
+Homepage: https://github.com/devfrp/winux
+Description: Windows PE executor for Linux — no Wine, no QEMU, no kernel module
+ Run native Windows PE32+ (x86_64) executables directly on Linux
+ through a lightweight translation layer:
+ .
+  * PE32+ loader with IAT resolution and on-address mapping
+  * 17 NT API stubs → Linux syscalls (NtCreateFile, NtAllocateVirtualMemory, ...)
+  * ~45 kernel32 functions (CreateFile, threads, heap, I/O)
+  * Synthetic TEB/PEB with GS segment register
+  * Seccomp BPF sandbox (~50 syscall whitelist)
+  * Full /proc transparency (ps, strace, lsof)
+  * Signal passthrough (SIGTERM, SIGSEGV crash dump)
+  * Path translation C:\ → Linux filesystem
+ .
+ Zero dependencies at runtime beyond glibc and libseccomp.

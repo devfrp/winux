@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>winux — Windows PE Executor for Linux</title>
+<meta name="description" content="Native, transparent execution of Windows PE32+ (x86_64) executables on Linux, without Wine, without VMs, without containers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --card: #12121a;
+  --border: #1e1e2a;
+  --text: #e4e4ec;
+  --text-dim: #8888a0;
+  --accent: #7c5cfc;
+  --accent-glow: rgba(124,92,252,0.3);
+  --code-bg: #0d0d14;
+  --code-text: #b8b8c8;
+  --green: #4ade80;
+  --red: #f87171;
+  --yellow: #facc15;
+  --blue: #60a5fa;
+  --tag-bg: rgba(124,92,252,0.08);
+  --tag-text: #a78bfa;
+  --hover: rgba(124,92,252,0.06);
+  --gradient-1: #7c5cfc;
+  --gradient-2: #4f46e5;
+  --gradient-3: #06b6d4;
+}
+
+[data-theme="light"] {
+  --bg: #fafafa;
+  --card: #ffffff;
+  --border: #e5e5ea;
+  --text: #1c1c24;
+  --text-dim: #6e6e7c;
+  --accent: #7c5cfc;
+  --accent-glow: rgba(124,92,252,0.15);
+  --code-bg: #f4f4f8;
+  --code-text: #4a4a58;
+  --tag-bg: rgba(124,92,252,0.06);
+  --tag-text: #5b21b6;
+  --hover: rgba(124,92,252,0.03);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* Lang switcher */
+.lang-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  height: 48px;
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 0.75rem;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+}
+.lang-bar a {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+.lang-bar a:hover { color: var(--text); background: var(--hover); }
+.lang-bar a.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--tag-bg);
+}
+
+/* Container */
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+/* Hero */
+.hero {
+  padding: 6rem 0 4rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -128px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle at center, var(--accent-glow), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+.hero-content { position: relative; z-index: 1; }
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--tag-text);
+  background: var(--tag-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  margin-bottom: 1.5rem;
+}
+.hero h1 {
+  font-size: 3.5rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin-bottom: 1.25rem;
+  background: linear-gradient(135deg, var(--text) 0%, var(--text-dim) 60%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero h1 span {
+  background: linear-gradient(135deg, var(--gradient-1), var(--gradient-3));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero .tagline {
+  font-size: 1.15rem;
+  color: var(--text-dim);
+  max-width: 620px;
+  margin: 0 auto 2rem;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.hero-actions {
+  display: flex; gap: 0.75rem; justify-content: center;
+  flex-wrap: wrap;
+}
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.75rem 1.75rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: all 0.25s;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 32px var(--accent-glow);
+}
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.75rem 1.75rem;
+  background: var(--card);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: all 0.25s;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-secondary:hover {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+/* Sections */
+section { padding: 3rem 0; }
+.section-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+}
+.section-subtitle {
+  color: var(--text-dim);
+  font-size: 0.9375rem;
+  margin-bottom: 2rem;
+}
+
+/* Feature grid */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.feature-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: all 0.25s;
+}
+.feature-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+}
+.feature-icon {
+  font-size: 1.375rem;
+  margin-bottom: 0.75rem;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tag-bg);
+  border-radius: 10px;
+  color: var(--accent);
+}
+.feature-card h3 {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  margin-bottom: 0.375rem;
+  color: var(--text);
+}
+.feature-card p {
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+
+/* Architecture diagram */
+.arch-diagram {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2rem;
+  overflow-x: auto;
+  font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.8;
+  color: var(--code-text);
+  white-space: pre;
+}
+.arch-diagram .arrow { color: var(--text-dim); }
+.arch-diagram .component { color: var(--accent); font-weight: 700; }
+.arch-diagram .layer { color: var(--blue); }
+.arch-diagram .module { color: var(--green); }
+
+/* Code block */
+.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 0.8125rem;
+}
+.code-block .code-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.code-block .code-header .dots {
+  display: flex; gap: 6px;
+}
+.code-block .code-header .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+}
+.code-block .code-header .dot.red { background: #ff5f57; }
+.code-block .code-header .dot.yellow { background: #febc2e; }
+.code-block .code-header .dot.green { background: #28c840; }
+.code-block pre {
+  padding: 1.25rem 1rem;
+  margin: 0;
+  overflow-x: auto;
+  font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  color: var(--code-text);
+  line-height: 1.7;
+}
+.code-block pre .cmd { color: var(--green); }
+.code-block pre .arg { color: var(--blue); }
+.code-block pre .comment { color: var(--text-dim); opacity: 0.6; }
+
+/* Specs grid */
+.specs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.spec-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  text-align: center;
+  transition: all 0.25s;
+}
+.spec-card .spec-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}
+.spec-card .spec-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+/* FAQ */
+.faq-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.faq-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  transition: all 0.25s;
+}
+.faq-item:hover { border-color: var(--accent); }
+.faq-item summary {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  cursor: pointer;
+  list-style: none;
+  display: flex; align-items: center; justify-content: space-between;
+  color: var(--text);
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+  content: '+';
+  font-size: 1.125rem;
+  color: var(--text-dim);
+  transition: transform 0.2s;
+  font-weight: 400;
+}
+.faq-item[open] summary::after { content: '−'; transform: rotate(0deg); }
+.faq-item .faq-answer {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 2.5rem 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.8125rem;
+}
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+footer .footer-links {
+  display: flex; gap: 1.5rem; justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
+/* Theme toggle */
+.theme-toggle {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1.125rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s;
+  z-index: 1000;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+}
+.theme-toggle:hover {
+  border-color: var(--accent);
+  transform: scale(1.05);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .hero { padding: 4.5rem 0 3rem; }
+  .hero h1 { font-size: 2.25rem; }
+  .hero .tagline { font-size: 1rem; }
+  .features-grid { grid-template-columns: 1fr; }
+  .specs-grid { grid-template-columns: repeat(2, 1fr); }
+  .lang-bar { padding: 0 1rem; }
+  .container { padding: 0 1rem; }
+}
+@media (max-width: 480px) {
+  .hero h1 { font-size: 1.75rem; }
+  .specs-grid { grid-template-columns: 1fr; }
+  .hero-actions { flex-direction: column; align-items: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- Lang switcher -->
+<nav class="lang-bar">
+  <a href="index.html" aria-label="Français">FR</a>
+  <a href="index.en.html" class="active" aria-label="English">EN</a>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-content">
+    <span class="badge">v1.0 · MIT License</span>
+    <h1><span>winux</span> — Windows&nbsp;PE Executor for Linux</h1>
+    <p class="tagline">
+      Native, transparent execution of Windows PE32+ (x86_64) executables on Linux,
+      without Wine, without VMs, without containers.
+    </p>
+    <div class="hero-actions">
+      <a href="https://github.com/devfrp/winux" class="btn-primary" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
+      </a>
+      <a href="#quickstart" class="btn-secondary">
+        Quick Start
+      </a>
+      <a href="https://github.com/devfrp/winux" class="btn-secondary" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.303 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.604-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12 24 5.37 18.63 0 12 0z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section>
+  <div class="container">
+    <h2 class="section-title">Architecture</h2>
+    <p class="section-subtitle">Full execution pipeline, from PE binary down to the Linux kernel.</p>
+    <div class="arch-diagram">
+<span class="component">┌──────────────┐</span>    <span class="component">┌──────────────┐</span>    <span class="module">┌─────────────────────┐</span>
+<span class="component">│ PE Loader    │</span><span class="arrow">───▶</span><span class="component">│ Win32 Bridge │</span><span class="arrow">───▶</span> <span class="module">│ kernel32.dll stubs  │</span>
+<span class="component">└──────────────┘</span>    <span class="component">└──────┬───────┘</span>    <span class="module">│ ntdll.dll stubs     │</span>
+               <span class="arrow">│</span>              <span class="module">└──────────┬──────────┘</span>
+    <span class="component">┌──────────────┐</span>    <span class="arrow">│</span>              <span class="arrow">│</span>
+    <span class="component">│ Memory       │</span><span class="arrow">◀───┘</span>              <span class="arrow">│</span>
+    <span class="component">│ Manager      │</span>                     <span class="arrow">│</span>
+    <span class="component">└──────┬───────┘</span>                     <span class="arrow">│</span>
+           <span class="arrow">│</span>                            <span class="arrow">│</span>
+    <span class="component">┌──────┴───────┐</span>    <span class="component">┌──────────────┐</span>    <span class="arrow">│</span>
+    <span class="component">│ Thread       │</span><span class="arrow">◀──▶</span><span class="component">│ I/O          │</span><span class="arrow">◀───┘</span>
+    <span class="component">│ Model        │</span>    <span class="component">│ Transparency │</span>
+    <span class="component">└──────┬───────┘</span>    <span class="component">└──────┬───────┘</span>
+           <span class="arrow">│</span>              <span class="arrow">│</span>
+           <span class="arrow">└──────┬───────┘</span>
+                 <span class="arrow">│</span>
+        <span class="layer">┌────────┴────────┐</span>
+        <span class="layer">│ seccomp BPF     │</span>
+        <span class="layer">│ Filter          │</span>
+        <span class="layer">└────────┬────────┘</span>
+                 <span class="arrow">│</span>
+        <span class="layer">┌────────┴────────┐</span>
+        <span class="layer">│ Linux Kernel    │</span>
+        <span class="layer">│ ≥ 4.17 (x86_64) │</span>
+        <span class="layer">└─────────────────┘</span>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section>
+  <div class="container">
+    <h2 class="section-title">Features</h2>
+    <p class="section-subtitle">Everything you need to run Windows binaries on Linux, with no compromises.</p>
+    <div class="features-grid">
+
+      <div class="feature-card">
+        <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+        <h3>PE Loader</h3>
+        <p>Parses PE32+ headers, mmap sections at their virtual addresses, and applies relocations with precision.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+        <h3>Static IAT Resolver</h3>
+        <p>Static import resolution with ~45 kernel32 functions and 17 ntdll stubs — no external dependencies.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+        <h3>Memory Manager</h3>
+        <p>Implements VirtualAlloc/VirtualFree and heap allocation with a mutex-protected free-list.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+        <h3>Thread Model</h3>
+        <p>TEB/PEB synthesis, GS segment configuration via arch_prctl, and native thread management.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></div>
+        <h3>Win32 Bridge</h3>
+        <p>Handle-to-fd table, transparent Windows-to-Linux path translation (C:\ → /, separators, etc.).</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+        <h3>seccomp BPF Filter</h3>
+        <p>~50 whitelisted syscalls enforced via libseccomp for hardened isolation.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+        <h3>System Integration</h3>
+        <p>Process name shows the .exe name in ps/htop. PE sections labeled in /proc/pid/maps.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></div>
+        <h3>I/O Transparency</h3>
+        <p>Seamless input/output redirection between the Windows user space and native Linux descriptors.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Quick Start -->
+<section id="quickstart">
+  <div class="container">
+    <h2 class="section-title">Quick Start</h2>
+    <p class="section-subtitle">Install winux in three commands and run your first PE binary.</p>
+
+    <div class="code-block" style="margin-bottom: 1.5rem;">
+      <div class="code-header">
+        <div class="dots">
+          <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+        </div>
+        <span>Terminal</span>
+      </div>
+      <pre><span class="comment"># Clone the repository</span>
+<span class="cmd">git clone</span> <span class="arg">https://github.com/devfrp/winux.git</span>
+
+<span class="comment"># Build</span>
+<span class="cmd">cd</span> winux && <span class="cmd">make</span>
+
+<span class="comment"># Install</span>
+<span class="cmd">sudo</span> <span class="cmd">make install</span>
+
+<span class="comment"># Run a Windows binary!</span>
+<span class="cmd">winexec</span> <span class="arg">prog.exe</span></pre>
+    </div>
+
+    <h3 style="font-size: 1rem; font-weight: 700; margin: 1.5rem 0 0.75rem;">Available Flags</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dots">
+          <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+        </div>
+        <span>Flags</span>
+      </div>
+      <pre><span class="cmd">winexec</span> <span class="arg">--debug</span>       <span class="comment"># Verbose logging</span>
+<span class="cmd">winexec</span> <span class="arg">--no-seccomp</span>  <span class="comment"># Disable syscall filter</span>
+<span class="cmd">winexec</span> <span class="arg">--paths</span>       <span class="comment"># Custom path mapping</span></pre>
+    </div>
+
+    <h3 style="font-size: 1rem; font-weight: 700; margin: 1.5rem 0 0.75rem;">Dependencies</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dots">
+          <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+        </div>
+        <span>Debian / Ubuntu</span>
+      </div>
+      <pre><span class="cmd">sudo apt install</span> <span class="arg">gcc make libseccomp-dev</span></pre>
+    </div>
+
+  </div>
+</section>
+
+<!-- Specs -->
+<section>
+  <div class="container">
+    <h2 class="section-title">Specifications</h2>
+    <p class="section-subtitle">A lightweight, high-performance, well-architected codebase.</p>
+    <div class="specs-grid">
+      <div class="spec-card">
+        <div class="spec-value">~5,600</div>
+        <div class="spec-label">Lines of C11</div>
+      </div>
+      <div class="spec-card">
+        <div class="spec-value">11+11+3</div>
+        <div class="spec-label">Components · Headers · Tests</div>
+      </div>
+      <div class="spec-card">
+        <div class="spec-value">x86_64</div>
+        <div class="spec-label">Architecture</div>
+      </div>
+      <div class="spec-card">
+        <div class="spec-value">≥ 4.17</div>
+        <div class="spec-label">Min. Linux Kernel</div>
+      </div>
+      <div class="spec-card">
+        <div class="spec-value">MIT</div>
+        <div class="spec-label">License</div>
+      </div>
+      <div class="spec-card">
+        <div class="spec-value">~50</div>
+        <div class="spec-label">Allowed Syscalls</div>
+      </div>
+      <div class="spec-card">
+        <div class="spec-value">45</div>
+        <div class="spec-label">kernel32 Functions</div>
+      </div>
+      <div class="spec-card">
+        <div class="spec-value">17</div>
+        <div class="spec-label">ntdll Stubs</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section>
+  <div class="container">
+    <h2 class="section-title">FAQ</h2>
+    <p class="section-subtitle">Everything you need to know about winux.</p>
+    <div class="faq-list">
+
+      <details class="faq-item">
+        <summary>Does winux replace Wine?</summary>
+        <div class="faq-answer">
+          No. winux is a lightweight executor specialized in PE32+ (x86_64) binaries. It does not implement the full Win32 API like Wine. It is designed for workloads where transparency and lightness take priority over full compatibility.
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>What types of binaries are supported?</summary>
+        <div class="faq-answer">
+          winux supports Windows PE32+ x86_64 executables. 32-bit binaries (PE32) are not currently supported.
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>Is it safe for production environments?</summary>
+        <div class="faq-answer">
+          winux includes a seccomp BPF filter that restricts the executable to ~50 syscalls. However, like any actively developed tool, evaluate the risks for your use case before production deployment.
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>Why is Linux kernel ≥ 4.17 required?</summary>
+        <div class="faq-answer">
+          winux uses the <code>MAP_FIXED_NOREPLACE</code> mmap flag, introduced in Linux kernel 4.17. This ensures safe memory placement without overwriting existing mappings.
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>Can I disable the seccomp filter?</summary>
+        <div class="faq-answer">
+          Yes, use the <code>--no-seccomp</code> flag. This can be useful for debugging, but removes the security layer provided by syscall filtering.
+        </div>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="https://github.com/devfrp/winux" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/devfrp/winux/blob/main/README.md" target="_blank" rel="noopener">Documentation</a>
+      <a href="https://github.com/devfrp/winux/issues" target="_blank" rel="noopener">Report a Bug</a>
+    </div>
+    <p>winux is released under the <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener">MIT</a> license. devfrp project.</p>
+  </div>
+</footer>
+
+<!-- Theme toggle -->
+<button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle theme">
+  <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+  <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+</button>
+
+<script>
+(function() {
+  var html = document.documentElement;
+  var toggle = document.getElementById('themeToggle');
+  var sun = toggle.querySelector('.icon-sun');
+  var moon = toggle.querySelector('.icon-moon');
+
+  function setTheme(theme) {
+    html.setAttribute('data-theme', theme);
+    localStorage.setItem('winux-theme', theme);
+    sun.style.display = theme === 'light' ? 'block' : 'none';
+    moon.style.display = theme === 'light' ? 'none' : 'block';
+  }
+
+  var saved = localStorage.getItem('winux-theme') || 'dark';
+  setTheme(saved);
+
+  toggle.addEventListener('click', function() {
+    var current = html.getAttribute('data-theme');
+    setTheme(current === 'dark' ? 'light' : 'dark');
+  });
+})();
+</script>
+
+</body>
+</html>

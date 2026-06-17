@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Build ──────────────────────────────────────────────────────────
+  build:
+    name: Build (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc make libseccomp-dev gcc-mingw-w64-x86-64
+
+      - name: Build winexec
+        run: make clean && make
+
+      - name: Verify binary
+        run: file build/bin/winexec && ldd build/bin/winexec
+
+      - name: Upload winexec artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: winexec-binary
+          path: build/bin/winexec
+
+  # ── Functional Tests ──────────────────────────────────────────────
+  test:
+    name: Functional Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc make libseccomp-dev gcc-mingw-w64-x86-64
+      - name: Build
+        run: make clean && make && make hello
+      - name: Test exit code
+        run: |
+          ./build/bin/winexec --no-seccomp build/test_hello.exe
+          [ $? -eq 42 ] || { echo "FAIL: exit code != 42"; exit 1; }
+          echo "PASS: exit code 42"
+
+  # ── Stress Tests ──────────────────────────────────────────────────
+  stress:
+    name: Stress Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc make libseccomp-dev gcc-mingw-w64-x86-64
+      - name: Build + compile PE tests
+        run: make clean && make && make stress
+      - name: Run stress tests
+        run: |
+          OUTPUT=$(./build/bin/winexec --no-seccomp build/test_stress.exe 2>&1)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q '\[TEST 1\].*\[PASS\]' || { echo "FAIL: Test 1"; exit 1; }
+          echo "$OUTPUT" | grep -q '\[TEST 2\].*\[PASS\]' || { echo "FAIL: Test 2"; exit 1; }
+          echo "$OUTPUT" | grep -q '\[TEST 3\].*\[PASS\]' || { echo "FAIL: Test 3"; exit 1; }
+          echo "$OUTPUT" | grep -q '\[TEST 4\].*\[PASS\]' || { echo "FAIL: Test 4"; exit 1; }
+          grep -q "path translation OK" /tmp/test.txt || { echo "FAIL: /tmp/test.txt"; exit 1; }
+          echo "All stress tests PASSED"
+      - name: Test SIGTERM
+        run: |
+          ./build/bin/winexec --no-seccomp build/test_stress.exe > /dev/null 2>&1 & PID=$!
+          sleep 0.2 && kill -TERM $PID 2>/dev/null || true
+          wait $PID 2>/dev/null; [ $? -eq 0 ] || { echo "FAIL: SIGTERM"; exit 1; }
+          echo "PASS: SIGTERM → exit 0"
+
+  # ── Valgrind ──────────────────────────────────────────────────────
+  valgrind:
+    name: Valgrind (leak check)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc make libseccomp-dev gcc-mingw-w64-x86-64 valgrind
+      - name: Build
+        run: make clean && make && make hello
+      - name: Run valgrind
+        run: |
+          valgrind --leak-check=full --show-leak-kinds=definite \
+            --error-exitcode=1 --errors-for-leak-kinds=definite \
+            ./build/bin/winexec --no-seccomp build/test_hello.exe
+          echo "PASS: zero definite leaks"
+
+  # ── Package: .tar.gz ─────────────────────────────────────────────
+  package-tar:
+    name: Package (.tar.gz)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc make libseccomp-dev
+      - name: Build + package
+        run: make clean && make && make package-tar
+      - name: Upload .tar.gz artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: winux-${{ github.ref_name }}-x86_64.tar.gz
+          path: build/dist/winux-1.0.0-x86_64.tar.gz
+
+  # ── Package: .deb ────────────────────────────────────────────────
+  package-deb:
+    name: Package (.deb)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc make libseccomp-dev dpkg-dev
+      - name: Build + package
+        run: make clean && make && make package-deb
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: winux_${{ github.ref_name }}_amd64.deb
+          path: build/dist/winux_1.0.0_amd64.deb
+
+  # ── Package: .rpm ────────────────────────────────────────────────
+  package-rpm:
+    name: Package (.rpm)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc make libseccomp-dev rpm
+      - name: Build + package
+        run: |
+          make clean && make && make package-rpm
+          find ~/rpmbuild -name 'winux-*.rpm' -exec cp {} build/dist/ \; 2>/dev/null || true
+          ls -la build/dist/
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: winux-${{ github.ref_name }}-1.x86_64.rpm
+          path: build/dist/winux-*.rpm
+
+  # ── Release: attach packages on tag push ──────────────────────────
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, stress, valgrind, package-tar, package-deb, package-rpm]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f -ls
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            ## winux v1.0.0 — Native Windows PE executor for Linux
+
+            Windows PE executor for Linux — no Wine, no VM, no container.
+
+            ### Packages
+            - `winux-1.0.0-x86_64.tar.gz` — generic Linux tarball
+            - `winux_1.0.0_amd64.deb` — Debian/Ubuntu
+            - `winux-1.0.0-1.x86_64.rpm` — Fedora/RHEL
+
+            ### Install
+            ```bash
+            # .deb
+            sudo dpkg -i winux_1.0.0_amd64.deb
+
+            # .rpm
+            sudo rpm -i winux-1.0.0-1.x86_64.rpm
+
+            # .tar.gz
+            tar xzf winux-1.0.0-x86_64.tar.gz -C /
+            ```
+
+            ### Quick Start
+            ```bash
+            winexec --debug prog.exe
+            ```
+
+            See [README.md](https://github.com/devfrp/winux) for full documentation.
+          files: |
+            artifacts/winux*/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
