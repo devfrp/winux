@@ -57,7 +57,7 @@ static void sigterm_handler(int sig)
     winux_terminate_requested = true;
 
     const char msg[] = "\n[winexec] SIGTERM received, terminating...\n";
-    write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    if (write(STDERR_FILENO, msg, sizeof(msg) - 1) < 0) {}
 
     /*
      * Terminaison immédiate avec exit code 0.
@@ -108,7 +108,7 @@ static void sigsegv_handler(int sig, siginfo_t *info, void *ctx)
                  (unsigned long long)g_pe_base,
                  fault_addr - g_pe_base);
         if (len > 0 && len < (int)sizeof(buf))
-            write(STDERR_FILENO, buf, (size_t)len);
+            if (write(STDERR_FILENO, buf, (size_t)len) < 0) {}
 
         /* Dump des registres GPR (x86_64) via ucontext_t */
 #ifdef __x86_64__
@@ -141,14 +141,14 @@ static void sigsegv_handler(int sig, siginfo_t *info, void *ctx)
                  (unsigned long long)uc->uc_mcontext.gregs[REG_RBP],
                   (unsigned long long)uc->uc_mcontext.gregs[REG_RIP]);
         if (len > 0 && len < (int)sizeof(buf))
-            write(STDERR_FILENO, buf, (size_t)len);
+            if (write(STDERR_FILENO, buf, (size_t)len) < 0) {}
 #endif
 
         len = snprintf(buf, sizeof(buf),
                  "╚══════════════════════════════════════════════════╝\n"
                  "\n");
         if (len > 0 && len < (int)sizeof(buf))
-            write(STDERR_FILENO, buf, (size_t)len);
+            if (write(STDERR_FILENO, buf, (size_t)len) < 0) {}
 
         _exit(128 + SIGSEGV);
     }
@@ -172,7 +172,7 @@ static void sigsegv_handler(int sig, siginfo_t *info, void *ctx)
         raise(SIGSEGV);
     } else {
         const char msg[] = "\n[winexec] Internal SIGSEGV outside PE range\n";
-        write(STDERR_FILENO, msg, sizeof(msg) - 1);
+        if (write(STDERR_FILENO, msg, sizeof(msg) - 1) < 0) {}
         _exit(128 + SIGSEGV);
     }
 }

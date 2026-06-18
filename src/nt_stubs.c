@@ -21,6 +21,7 @@
 #include "include/winux.h"
 #include "include/nt_stubs.h"
 #include "include/io_transparent.h"
+#include "include/memory_manager.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -125,27 +126,6 @@ static int disposition_to_oflags(ULONG CreateDisposition)
     case FILE_SUPERSEDE:     return O_CREAT | O_TRUNC;
     default:                 return 0;
     }
-}
-
-/*
- * Traduit les flags Protect NT en flags PROT_* mmap/mprotect.
- */
-static int protect_to_mmap_prot(ULONG Protect)
-{
-    int prot = PROT_NONE;
-
-    switch (Protect & 0xFF) {
-    case PAGE_NOACCESS:          prot = PROT_NONE;   break;
-    case PAGE_READONLY:          prot = PROT_READ;   break;
-    case PAGE_READWRITE:         prot = PROT_READ | PROT_WRITE; break;
-    case PAGE_WRITECOPY:         prot = PROT_READ | PROT_WRITE; break;
-    case PAGE_EXECUTE:           prot = PROT_EXEC;   break;
-    case PAGE_EXECUTE_READ:      prot = PROT_READ | PROT_EXEC;  break;
-    case PAGE_EXECUTE_READWRITE: prot = PROT_READ | PROT_WRITE | PROT_EXEC; break;
-    default:                     prot = PROT_READ | PROT_WRITE; break;
-    }
-
-    return prot;
 }
 
 /*
@@ -456,60 +436,10 @@ WINAPI NTSTATUS NtAllocateVirtualMemory(
     ULONG     Protect
 )
 {
-    void *addr;
-    int prot, flags = MAP_PRIVATE | MAP_ANONYMOUS;
-    SIZE_T size;
-
     (void)ProcessHandle;
     (void)ZeroBits;
 
-    if (!BaseAddress || !RegionSize || *RegionSize == 0) {
-        winux_set_last_error(ERROR_INVALID_PARAMETER);
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    size = *RegionSize;
-
-    /* Alignement sur page 4K */
-    size = WINUX_ALIGN_UP(size, 0x1000);
-
-    prot = protect_to_mmap_prot(Protect);
-
-    /*
-     * Si une adresse est suggérée, on essaie MAP_FIXED_NOREPLACE.
-     * Sinon, on laisse le kernel choisir (NULL).
-     */
-    addr = *BaseAddress;
-    if (addr) {
-        void *requested = (void *)((uintptr_t)addr & ~0xFFFULL); /* page-align */
-        flags |= MAP_FIXED_NOREPLACE;
-        addr = mmap(requested, size, prot, flags, -1, 0);
-        if (addr == MAP_FAILED && errno == EEXIST) {
-            /* Fallback : MAP_FIXED */
-            WINUX_LOG("NtAllocateVirtualMemory: MAP_FIXED_NOREPLACE failed at %p, "
-                      "falling back to MAP_FIXED", requested);
-            flags &= ~MAP_FIXED_NOREPLACE;
-            flags |= MAP_FIXED;
-            addr = mmap(requested, size, prot, flags, -1, 0);
-        }
-    } else {
-        addr = mmap(NULL, size, prot, flags, -1, 0);
-    }
-
-    if (addr == MAP_FAILED) {
-        int saved_errno = errno;
-        winux_set_last_error(ERROR_NOT_ENOUGH_MEMORY);
-        WINUX_ERR("NtAllocateVirtualMemory: mmap failed (size=%zu)", size);
-        return errno_to_ntstatus(saved_errno);
-    }
-
-    *BaseAddress = addr;
-    *RegionSize  = size;
-
-    winux_set_last_error(ERROR_SUCCESS);
-    WINUX_LOG("NtAllocateVirtualMemory: allocated %zu bytes at %p (prot=0x%x)",
-              size, addr, prot);
-    return STATUS_SUCCESS;
+    return mem_virtual_alloc(BaseAddress, RegionSize, AllocationType, Protect);
 }
 
 /* ==========================================================================
@@ -523,51 +453,9 @@ WINAPI NTSTATUS NtFreeVirtualMemory(
     ULONG   FreeType
 )
 {
-    void *addr;
-    SIZE_T size;
-
     (void)ProcessHandle;
 
-    if (!BaseAddress || !*BaseAddress) {
-        winux_set_last_error(ERROR_INVALID_PARAMETER);
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    addr = *BaseAddress;
-    size = RegionSize ? *RegionSize : 0;
-
-    if (FreeType & MEM_RELEASE) {
-        /*
-         * MEM_RELEASE : libère toute la région.
-         * Sous Linux, munmap nécessite la taille exacte.
-         * Si RegionSize est 0, on libère ce qu'on peut (best effort).
-         */
-        if (size == 0)
-            size = 0x1000; /* au moins une page */
-
-        if (munmap(addr, size) != 0) {
-            int saved_errno = errno;
-            winux_set_last_error(errno_to_win32_error(saved_errno));
-            return errno_to_ntstatus(saved_errno);
-        }
-
-        *BaseAddress = NULL;
-        if (RegionSize) *RegionSize = 0;
-    } else {
-        /* MEM_DECOMMIT : on garde la réservation mais libère les pages
-           physiques. Sous Linux, on fait un mmap anonyme par-dessus avec
-           PROT_NONE (équivalent approximatif). */
-        void *ret = mmap(addr, size, PROT_NONE,
-                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-        if (ret == MAP_FAILED) {
-            int saved_errno = errno;
-            winux_set_last_error(errno_to_win32_error(saved_errno));
-            return errno_to_ntstatus(saved_errno);
-        }
-    }
-
-    winux_set_last_error(ERROR_SUCCESS);
-    return STATUS_SUCCESS;
+    return mem_virtual_free(BaseAddress, RegionSize, FreeType);
 }
 
 /* ==========================================================================
@@ -582,39 +470,9 @@ WINAPI NTSTATUS NtProtectVirtualMemory(
     ULONG  *OldProtect
 )
 {
-    void *addr;
-    SIZE_T size;
-    int new_prot;
-
     (void)ProcessHandle;
 
-    if (!BaseAddress || !*BaseAddress || !RegionSize || *RegionSize == 0) {
-        winux_set_last_error(ERROR_INVALID_PARAMETER);
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    addr = *BaseAddress;
-    size = WINUX_ALIGN_UP(*RegionSize, 0x1000);
-    new_prot = protect_to_mmap_prot(NewProtect);
-
-    /*
-     * On ne peut pas récupérer l'ancienne protection facilement
-     * sous Linux sans /proc/self/maps. On met PAGE_READWRITE par défaut.
-     */
-    if (OldProtect) {
-        *OldProtect = PAGE_READWRITE;
-    }
-
-    if (mprotect(addr, size, new_prot) != 0) {
-        int saved_errno = errno;
-        winux_set_last_error(errno_to_win32_error(saved_errno));
-        WINUX_ERR("NtProtectVirtualMemory: mprotect failed at %p (size=%zu)", addr, size);
-        return errno_to_ntstatus(saved_errno);
-    }
-
-    *RegionSize = size;
-    winux_set_last_error(ERROR_SUCCESS);
-    return STATUS_SUCCESS;
+    return mem_virtual_protect(BaseAddress, RegionSize, NewProtect, OldProtect);
 }
 
 /* ==========================================================================

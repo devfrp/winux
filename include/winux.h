@@ -554,9 +554,6 @@ extern void *(*winux_import_resolver)(const char *dll, const char *func);
 /* Chemin de l'exécutable PE chargé (pour GetModuleFileNameA) */
 extern char g_loaded_exe_path[4096];
 
-extern HANDLE  winux_handles[WINUX_MAX_HANDLES];
-extern HANDLE  winux_process_heap;
-
 /* ==========================================================================
    Prototypes globaux
    ========================================================================== */

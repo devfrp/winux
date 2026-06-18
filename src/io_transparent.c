@@ -297,7 +297,14 @@ load_defaults:
                  "/home/%s", user);
         count++;
 
-        /* Règle 2 : C:\tmp  → /tmp (si /tmp existe) */
+        /* Règle 2 : C:\Users  → /home */
+        strncpy(path_rules[count].win_prefix, "C:\\Users",
+                sizeof(path_rules[count].win_prefix) - 1);
+        strncpy(path_rules[count].linux_prefix, "/home",
+                sizeof(path_rules[count].linux_prefix) - 1);
+        count++;
+
+        /* Règle 3 : C:\tmp  → /tmp (si /tmp existe) */
         {
             struct stat st;
             if (stat("/tmp", &st) == 0 && S_ISDIR(st.st_mode)) {
@@ -309,14 +316,7 @@ load_defaults:
             }
         }
 
-        /* Règle 3 : C:\Users  → /home */
-        strncpy(path_rules[count].win_prefix, "C:\\Users",
-                sizeof(path_rules[count].win_prefix) - 1);
-        strncpy(path_rules[count].linux_prefix, "/home",
-                sizeof(path_rules[count].linux_prefix) - 1);
-        count++;
-
-        /* Règle 3 : C:\  → répertoire courant */
+        /* Règle 4 : C:\  → répertoire courant */
         if (getcwd(path_rules[count].linux_prefix,
                    sizeof(path_rules[count].linux_prefix))) {
             strncpy(path_rules[count].win_prefix, "C:\\",
@@ -324,7 +324,7 @@ load_defaults:
             count++;
         }
 
-        /* Règle 4 : D:\  → /mnt/d (si le répertoire existe) */
+        /* Règle 5 : D:\  → /mnt/d (si le répertoire existe) */
         {
             struct stat st;
             if (stat("/mnt/d", &st) == 0) {

@@ -1,6 +1,6 @@
 #!/bin/sh
 # postinst script for winux
 set -e
-echo "winux v0.1.0 installed."
+echo "winux v1.0.0 installed."
 echo "  Usage: winexec [--debug] [--no-seccomp] [--paths <file>] <prog.exe>"
 echo "  Docs:  /usr/local/share/doc/winux/README.md"
