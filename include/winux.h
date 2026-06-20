@@ -26,6 +26,7 @@ typedef uint8_t     BYTE;
 typedef uint16_t    WORD;
 typedef uint32_t    DWORD;
 typedef uint64_t    QWORD;
+typedef uint64_t    DWORD64;
 typedef int32_t     LONG;
 typedef uint32_t    ULONG;
 typedef uint64_t    ULONGLONG;
