@@ -19,6 +19,7 @@
 #define WIN32_BRIDGE_H
 
 #include "winux.h"
+#include "registry.h"
 
 /* ==========================================================================
    Initialisation
@@ -158,21 +159,6 @@ WINAPI BOOL kernel32_ReadConsoleA(
     PVOID   lpReserved
 );
 WINAPI void kernel32_Sleep(DWORD dwMilliseconds);
-
-/* kernel32.dll — Registry functions */
-WINAPI LONG kernel32_RegOpenKeyExA(HKEY hKey, LPCSTR lpSubKey, DWORD ulOptions,
-                                    DWORD samDesired, HKEY *phkResult);
-WINAPI LONG kernel32_RegQueryValueExA(HKEY hKey, LPCSTR lpValueName,
-                                       DWORD *lpReserved, DWORD *lpType,
-                                       BYTE *lpData, DWORD *lpcbData);
-WINAPI LONG kernel32_RegSetValueExA(HKEY hKey, LPCSTR lpValueName,
-                                     DWORD Reserved, DWORD dwType,
-                                     const BYTE *lpData, DWORD cbData);
-WINAPI LONG kernel32_RegCloseKey(HKEY hKey);
-WINAPI LONG kernel32_RegCreateKeyExA(HKEY hKey, LPCSTR lpSubKey, DWORD Reserved,
-                                      LPSTR lpClass, DWORD dwOptions,
-                                      DWORD samDesired, void *lpSecurityAttributes,
-                                      HKEY *phkResult, DWORD *lpdwDisposition);
 
 /* kernel32.dll — Third-party DLL resolution */
 WINAPI HANDLE kernel32_LoadLibraryA(LPCSTR lpLibFileName);
