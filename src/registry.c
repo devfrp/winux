@@ -20,15 +20,16 @@ static char *reg_dir_path(void)
     static char path[4096];
     const char *home = getenv("HOME");
     if (!home) home = "/tmp";
-    snprintf(path, sizeof(path), "%s/.winux", home);
+    snprintf(path, sizeof(path), "%.4000s/.winux", home);
     mkdir(path, 0755);
     return path;
 }
 
 static char *reg_file_path(void)
 {
-    static char path[4096];
-    snprintf(path, sizeof(path), "%s/registry.json", reg_dir_path());
+    static char path[4128];
+    int n = snprintf(path, sizeof(path), "%s/registry.json", reg_dir_path());
+    (void)n;
     return path;
 }
 
@@ -297,18 +298,18 @@ int reg_query_value(REGISTRY_NODE *node, const char *value_name,
 int reg_set_value(REGISTRY_NODE *node, const char *value_name,
                   DWORD type, const void *data, DWORD data_size)
 {
+    char num_buf[64];
+    const char *str;
     if (!node) return ERROR_BADKEY;
     if (!data || data_size == 0) return ERROR_INVALID_PARAMETER;
 
-    const char *str = (const char *)data;
-    if (type != REG_SZ && type != REG_EXPAND_SZ) {
-        char buf[64];
-        if (type == REG_DWORD && data_size >= 4) {
-            snprintf(buf, sizeof(buf), "%u", *(const DWORD *)data);
-            str = buf;
-        } else {
-            return ERROR_INVALID_PARAMETER;
-        }
+    if (type == REG_SZ || type == REG_EXPAND_SZ) {
+        str = (const char *)data;
+    } else if (type == REG_DWORD && data_size >= 4) {
+        snprintf(num_buf, sizeof(num_buf), "%u", *(const DWORD *)data);
+        str = num_buf;
+    } else {
+        return ERROR_INVALID_PARAMETER;
     }
 
     if (!value_name || !*value_name) {
