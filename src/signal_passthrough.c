@@ -18,10 +18,12 @@
 
 #include "include/winux.h"
 #include "include/signal_passthrough.h"
+#include "include/thread_model.h"
 
 #include <ucontext.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <setjmp.h>
 
 /* ==========================================================================
    État global
@@ -72,26 +74,107 @@ static void sigterm_handler(int sig)
  * SIGSEGV handler : intercepte les crashes dans le code PE.
  *
  * Si l'adresse fautive est dans la plage PE :
- *   - Affiche un dump de crash avec offset PE, VA, et registres GPR
- *   - Termine avec exit(128+SIGSEGV)
+ *   1. Tente de dérouler le SEH (walk TEB->ExceptionList)
+ *      - Boucle sur la chaîne EXCEPTION_REGISTRATION_RECORD
+ *      - Appelle chaque handler (sa)
+ *      - Si EXCEPTION_EXECUTE_HANDLER : unwinding (restore RSP/RIP)
+ *      - Si EXCEPTION_CONTINUE_SEARCH : continue
+ *   2. Si aucun handler n'a pris l'exception → crash dump + exit
  *
  * Si l'adresse est hors plage PE :
- *   - Restaure le handler par défaut et relance le signal
- *     (bug dans winexec, pas dans le PE).
+ *   - Restaure le handler par défaut et relance le signal.
  */
 static void sigsegv_handler(int sig, siginfo_t *info, void *ctx)
 {
     ucontext_t *uc = (ucontext_t *)ctx;
     uintptr_t fault_addr = (uintptr_t)info->si_addr;
 
-    /*
-     * Vérifier si l'adresse fautive est dans la plage PE.
-     */
     if (fault_addr >= g_pe_base && fault_addr < g_pe_base + g_pe_size) {
-        /*
-         * Crash dans le code PE → dump diagnostic.
-         * On utilise write(2) car fprintf n'est pas async-signal-safe.
-         */
+        EXCEPTION_RECORD except_rec;
+        CONTEXT64 seh_context;
+        memset(&except_rec, 0, sizeof(except_rec));
+        memset(&seh_context, 0, sizeof(seh_context));
+
+        except_rec.ExceptionCode = EXCEPTION_ACCESS_VIOLATION;
+        except_rec.ExceptionAddress = (PVOID)fault_addr;
+        except_rec.NumberParameters = 2;
+        except_rec.ExceptionInformation[0] = (info->si_code == SEGV_MAPERR) ? 0 : 1;
+        except_rec.ExceptionInformation[1] = (ULONG_PTR)fault_addr;
+
+#ifdef __x86_64__
+        seh_context.Rax = uc->uc_mcontext.gregs[REG_RAX];
+        seh_context.Rcx = uc->uc_mcontext.gregs[REG_RCX];
+        seh_context.Rdx = uc->uc_mcontext.gregs[REG_RDX];
+        seh_context.Rbx = uc->uc_mcontext.gregs[REG_RBX];
+        seh_context.Rsp = uc->uc_mcontext.gregs[REG_RSP];
+        seh_context.Rbp = uc->uc_mcontext.gregs[REG_RBP];
+        seh_context.Rsi = uc->uc_mcontext.gregs[REG_RSI];
+        seh_context.Rdi = uc->uc_mcontext.gregs[REG_RDI];
+        seh_context.R8  = uc->uc_mcontext.gregs[REG_R8];
+        seh_context.R9  = uc->uc_mcontext.gregs[REG_R9];
+        seh_context.R10 = uc->uc_mcontext.gregs[REG_R10];
+        seh_context.R11 = uc->uc_mcontext.gregs[REG_R11];
+        seh_context.R12 = uc->uc_mcontext.gregs[REG_R12];
+        seh_context.R13 = uc->uc_mcontext.gregs[REG_R13];
+        seh_context.R14 = uc->uc_mcontext.gregs[REG_R14];
+        seh_context.R15 = uc->uc_mcontext.gregs[REG_R15];
+        seh_context.Rip = uc->uc_mcontext.gregs[REG_RIP];
+#endif
+
+        WINUX_TEB *teb = teb_get_current();
+        EXCEPTION_REGISTRATION_RECORD *rec = NULL;
+        bool handled = false;
+
+        if (teb && teb->Tib.ExceptionList != (uint64_t)-1) {
+            rec = (EXCEPTION_REGISTRATION_RECORD *)(uintptr_t)teb->Tib.ExceptionList;
+        }
+
+        if (rec) {
+            while (rec && rec->Handler && rec != (void *)-1) {
+                EXCEPTION_REGISTRATION_RECORD *next =
+                    (EXCEPTION_REGISTRATION_RECORD *)rec->Next;
+
+                PVECTORED_EXCEPTION_HANDLER handler_fn =
+                    (PVECTORED_EXCEPTION_HANDLER)rec->Handler;
+
+                LONG disposition = handler_fn(&except_rec);
+
+                if (disposition == EXCEPTION_EXECUTE_HANDLER) {
+#ifdef __x86_64__
+                    uc->uc_mcontext.gregs[REG_RAX] = seh_context.Rax;
+                    uc->uc_mcontext.gregs[REG_RCX] = seh_context.Rcx;
+                    uc->uc_mcontext.gregs[REG_RDX] = seh_context.Rdx;
+                    uc->uc_mcontext.gregs[REG_RBX] = seh_context.Rbx;
+                    uc->uc_mcontext.gregs[REG_RSP] = seh_context.Rsp;
+                    uc->uc_mcontext.gregs[REG_RBP] = seh_context.Rbp;
+                    uc->uc_mcontext.gregs[REG_RSI] = seh_context.Rsi;
+                    uc->uc_mcontext.gregs[REG_RDI] = seh_context.Rdi;
+                    uc->uc_mcontext.gregs[REG_R8]  = seh_context.R8;
+                    uc->uc_mcontext.gregs[REG_R9]  = seh_context.R9;
+                    uc->uc_mcontext.gregs[REG_R10] = seh_context.R10;
+                    uc->uc_mcontext.gregs[REG_R11] = seh_context.R11;
+                    uc->uc_mcontext.gregs[REG_R12] = seh_context.R12;
+                    uc->uc_mcontext.gregs[REG_R13] = seh_context.R13;
+                    uc->uc_mcontext.gregs[REG_R14] = seh_context.R14;
+                    uc->uc_mcontext.gregs[REG_R15] = seh_context.R15;
+                    uc->uc_mcontext.gregs[REG_RIP] = seh_context.Rip;
+#endif
+                    handled = true;
+                    break;
+                }
+
+                if (disposition == EXCEPTION_CONTINUE_EXECUTION) {
+                    return;
+                }
+
+                rec = next;
+                if (rec == (void *)-1) break;
+            }
+        }
+
+        if (handled) return;
+
+        /* Crash dump (handler non trouvé) */
         char buf[1024];
         int len;
 
@@ -103,14 +186,15 @@ static void sigsegv_handler(int sig, siginfo_t *info, void *ctx)
                  "║  Fault VA:      0x%016llx                       ║\n"
                  "║  PE Base:       0x%016llx                       ║\n"
                  "║  PE Offset:     0x%08lx                         ║\n"
+                 "║  ExceptionList: %s                           ║\n"
                  "╠══════════════════════════════════════════════════╣\n",
                  (unsigned long long)fault_addr,
                  (unsigned long long)g_pe_base,
-                 fault_addr - g_pe_base);
+                 fault_addr - g_pe_base,
+                 rec ? "SEH walked" : "empty");
         if (len > 0 && len < (int)sizeof(buf))
             if (write(STDERR_FILENO, buf, (size_t)len) < 0) {}
 
-        /* Dump des registres GPR (x86_64) via ucontext_t */
 #ifdef __x86_64__
         len = snprintf(buf, sizeof(buf),
                  "║  Registers:                                       ║\n"

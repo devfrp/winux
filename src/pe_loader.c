@@ -39,6 +39,9 @@
  */
 extern void *(*winux_import_resolver)(const char *dll, const char *func);
 
+/* TLS callbacks — partagé avec nt_stubs.c pour les événements thread */
+DWORD64 *g_tls_callback_array = NULL;
+
 /* ==========================================================================
    Fonctions internes — validation du PE
    ========================================================================== */
@@ -622,6 +625,33 @@ PE_IMAGE *pe_load(const char *path)
         WINUX_ERR("Import resolution failed for '%s'", path);
         goto fail_unmap_sections;
     }
+
+    /* 7b. Exécuter les TLS callbacks (DLL_PROCESS_ATTACH) */
+    do {
+        IMAGE_DATA_DIRECTORY tls_dir;
+        IMAGE_TLS_DIRECTORY64 *tls;
+        tls_dir = pe->nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
+        if (tls_dir.VirtualAddress == 0 || tls_dir.Size == 0)
+            break;
+
+        tls = (IMAGE_TLS_DIRECTORY64 *)(uintptr_t)(
+            pe->mapped_base + tls_dir.VirtualAddress);
+        if (tls->AddressOfCallBacks == 0)
+            break;
+
+        DWORD64 *callbacks = (DWORD64 *)(uintptr_t)tls->AddressOfCallBacks;
+        if (!callbacks)
+            break;
+
+        g_tls_callback_array = callbacks;
+
+        typedef void (WINAPI *tls_callback_fn)(PVOID, DWORD, PVOID);
+        for (int cb = 0; callbacks[cb] != 0; cb++) {
+            tls_callback_fn fn = (tls_callback_fn)(uintptr_t)callbacks[cb];
+            WINUX_LOG("Calling TLS callback %d at %p", cb, (void *)callbacks[cb]);
+            fn((PVOID)(uintptr_t)pe->mapped_base, DLL_PROCESS_ATTACH, NULL);
+        }
+    } while (0);
 
     /* 8. Configurer le point d'entrée */
     if (pe->nt->OptionalHeader.AddressOfEntryPoint != 0) {

@@ -25,11 +25,13 @@
 #include "include/nt_stubs.h"
 #include "include/io_transparent.h"
 #include "include/memory_manager.h"
+#include "include/registry.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <sched.h>
+#include <dlfcn.h>
 
 /* ==========================================================================
    Table d'import statique
@@ -114,6 +116,22 @@ static IMPORT_ENTRY import_table[] = {
     IMPORT(     "kernel32.dll", ReadConsoleA),
     IMPORT(     "kernel32.dll", Sleep),
 
+    /* kernel32.dll — Registry (HKCU) */
+    IMPORT(     "kernel32.dll", RegOpenKeyExA),
+    IMPORT(     "kernel32.dll", RegQueryValueExA),
+    IMPORT(     "kernel32.dll", RegSetValueExA),
+    IMPORT(     "kernel32.dll", RegCloseKey),
+    IMPORT(     "kernel32.dll", RegCreateKeyExA),
+
+    /* kernel32.dll — DLL loading */
+    IMPORT(     "kernel32.dll", LoadLibraryA),
+    IMPORT(     "kernel32.dll", GetProcAddress),
+    IMPORT(     "kernel32.dll", FreeLibrary),
+
+    /* kernel32.dll — SEH support */
+    IMPORT(     "kernel32.dll", SetUnhandledExceptionFilter),
+    IMPORT(     "kernel32.dll", UnhandledExceptionFilter),
+
     /* kernel32.dll — fonctions souvent importées, stubs minimales */
     { "kernel32.dll", "GetCommandLineA",       NULL },
     { "kernel32.dll", "GetEnvironmentVariableA", NULL },
@@ -138,14 +156,11 @@ static IMPORT_ENTRY import_table[] = {
     { "kernel32.dll", "TlsFree",               NULL },
     { "kernel32.dll", "MultiByteToWideChar",   NULL },
     { "kernel32.dll", "WideCharToMultiByte",   NULL },
-    { "kernel32.dll", "LoadLibraryA",          NULL },
-    { "kernel32.dll", "GetProcAddress",        NULL },
-    { "kernel32.dll", "FreeLibrary",           NULL },
+    /* LoadLibraryA / GetProcAddress / FreeLibrary now resolved above */
     IMPORT(     "kernel32.dll", CreateThread),
     { "kernel32.dll", "GetSystemInfo",         NULL },
     { "kernel32.dll", "IsDebuggerPresent",     NULL },
-    { "kernel32.dll", "SetUnhandledExceptionFilter", NULL },
-    { "kernel32.dll", "UnhandledExceptionFilter", NULL },
+    /* SetUnhandledExceptionFilter / UnhandledExceptionFilter now resolved above */
     { "kernel32.dll", "RaiseException",        NULL },
     { "kernel32.dll", "RtlUnwind",             NULL },
     { "kernel32.dll", "DebugBreak",            NULL },
@@ -189,23 +204,234 @@ static IMPORT_ENTRY import_table[] = {
 };
 
 /* ==========================================================================
+   Table ordinals → noms
+   ========================================================================== */
+
+typedef struct {
+    const char *dll;
+    uint16_t    ordinal;
+    const char *name;
+} ORDINAL_ENTRY;
+
+static ORDINAL_ENTRY ordinal_table[] = {
+    { "ntdll.dll",    1,  "NtMapViewOfSection" },
+    { "ntdll.dll",    8,  "NtCreateSection" },
+    { "ntdll.dll",   16,  "RtlInitUnicodeString" },
+    { "ntdll.dll",   19,  "RtlFreeUnicodeString" },
+    { "ntdll.dll",   43,  "RtlNtStatusToDosError" },
+    { "ntdll.dll",   44,  "RtlAllocateHeap" },
+    { "ntdll.dll",   45,  "RtlFreeHeap" },
+    { "ntdll.dll",  257,  "CsrNewThread" },
+    { "ntdll.dll",  258,  "CsrAllocateCaptureBuffer" },
+    { "ntdll.dll",  259,  "CsrAllocateMessagePointer" },
+    { "ntdll.dll",  260,  "CsrClientCallServer" },
+    { "ntdll.dll",  261,  "CsrFreeCaptureBuffer" },
+    { "ntdll.dll",  262,  "CsrIdentifyAlertableThread" },
+    { "ntdll.dll",  263,  "CsrProbeForRead" },
+    { "ntdll.dll",  264,  "CsrProbeForWrite" },
+    { "ntdll.dll",  265,  "CsrSetPriorityClass" },
+    { "ntdll.dll",  266,  "CsrVerifyRegion" },
+    { "ntdll.dll",  267,  "DebugPrint" },
+    { "ntdll.dll",  268,  "DebugPrompt" },
+    { "ntdll.dll",  269,  "DbgBreakPoint" },
+    { "ntdll.dll",  270,  "DbgUserBreakPoint" },
+    { "ntdll.dll",  271,  "DbgUiConnectToDbg" },
+    { "ntdll.dll",  272,  "DbgUiContinue" },
+    { "ntdll.dll",  273,  "DbgUiGetThreadDebugObject" },
+    { "ntdll.dll",  274,  "DbgUiIssueRemoteBreakin" },
+    { "ntdll.dll",  275,  "DbgUiRemoteBreakin" },
+    { "ntdll.dll",  276,  "DbgUiSetThreadDebugObject" },
+    { "ntdll.dll",  277,  "DbgUiStopDebugging" },
+    { "ntdll.dll",  278,  "DbgUiWaitStateChange" },
+    { "ntdll.dll",  279,  "RtlCreateProcessParameters" },
+    { "ntdll.dll",  280,  "RtlDestroyProcessParameters" },
+    { "kernel32.dll", 1,  "GetModuleHandleA" },
+    { "kernel32.dll", 2,  "GetProcAddress" },
+    { "kernel32.dll", 3,  "LoadLibraryA" },
+    { "kernel32.dll", 4,  "FreeLibrary" },
+    { "kernel32.dll", 5,  "GetLastError" },
+    { "kernel32.dll", 6,  "SetLastError" },
+    { "kernel32.dll", 7,  "GetCurrentProcess" },
+    { "kernel32.dll", 8,  "GetCurrentProcessId" },
+    { "kernel32.dll", 9,  "GetCurrentThread" },
+    { "kernel32.dll",10,  "GetCurrentThreadId" },
+    { "kernel32.dll",11,  "CreateThread" },
+    { "kernel32.dll",12,  "ExitProcess" },
+    { "kernel32.dll",13,  "GetStdHandle" },
+    { "kernel32.dll",14,  "CloseHandle" },
+    { "kernel32.dll",15,  "WriteFile" },
+    { "kernel32.dll",16,  "ReadFile" },
+    { "kernel32.dll",17,  "CreateFileA" },
+    { "kernel32.dll",18,  "SetFilePointer" },
+    { "kernel32.dll",19,  "GetFileSize" },
+    { "kernel32.dll",20,  "VirtualAlloc" },
+    { "kernel32.dll",21,  "VirtualFree" },
+    { "kernel32.dll",22,  "GetProcessHeap" },
+    { "kernel32.dll",23,  "HeapAlloc" },
+    { "kernel32.dll",24,  "HeapFree" },
+    { "kernel32.dll",25,  "Sleep" },
+    { NULL, 0, NULL }
+};
+
+static const char *ordinal_to_name(const char *dll, uint16_t ord)
+{
+    for (ORDINAL_ENTRY *e = ordinal_table; e->dll != NULL; e++) {
+        if (strcasecmp(e->dll, dll) == 0 && e->ordinal == ord)
+            return e->name;
+    }
+    return NULL;
+}
+
+/* ==========================================================================
+   dlopen fallback for third-party DLLs
+   ========================================================================== */
+
+struct dll_handle {
+    char  *name;
+    void  *handle;
+    struct dll_handle *next;
+};
+
+static struct dll_handle *g_dll_list = NULL;
+static bool g_dlopen_allowed = true;
+
+static void *dll_find_or_load(const char *dll_name)
+{
+    if (!g_dlopen_allowed) return NULL;
+
+    for (struct dll_handle *d = g_dll_list; d; d = d->next)
+        if (strcasecmp(d->name, dll_name) == 0)
+            return d->handle;
+
+    const char *search_paths[] = {
+        ".",
+        "/usr/local/lib/winux",
+        NULL
+    };
+    char home_lib[4096];
+    const char *home = getenv("HOME");
+    if (home) {
+        snprintf(home_lib, sizeof(home_lib), "%s/.winux/lib", home);
+        search_paths[2] = home_lib;
+    }
+
+    const char *env_path = getenv("WINUX_LIB_PATH");
+    char so_name[4096];
+    bool found = false;
+
+    if (env_path) {
+        snprintf(so_name, sizeof(so_name), "%s/lib%s.so", env_path, dll_name);
+        if (access(so_name, F_OK) == 0) found = true;
+    }
+
+    if (!found) {
+        for (int i = 0; search_paths[i] != NULL; i++) {
+            snprintf(so_name, sizeof(so_name), "%s/lib%s.so",
+                     search_paths[i], dll_name);
+            if (access(so_name, F_OK) == 0) { found = true; break; }
+        }
+    }
+
+    if (!found) {
+        size_t dll_len = strlen(dll_name);
+        if (dll_len > 4 && strcasecmp(dll_name + dll_len - 4, ".dll") == 0) {
+            char basename[256];
+            strncpy(basename, dll_name, sizeof(basename) - 1);
+            basename[sizeof(basename) - 1] = '\0';
+            basename[dll_len - 4] = '\0';
+
+            if (env_path) {
+                snprintf(so_name, sizeof(so_name), "%s/lib%s.so", env_path, basename);
+                if (access(so_name, F_OK) == 0) found = true;
+            }
+            if (!found) {
+                for (int i = 0; search_paths[i] != NULL; i++) {
+                    snprintf(so_name, sizeof(so_name), "%s/lib%s.so",
+                             search_paths[i], basename);
+                    if (access(so_name, F_OK) == 0) { found = true; break; }
+                }
+            }
+        }
+    }
+
+    if (!found) return NULL;
+
+    void *handle = dlopen(so_name, RTLD_LAZY | RTLD_LOCAL);
+    if (!handle) {
+        WINUX_LOG("dlopen(%s) failed: %s", so_name, dlerror());
+        return NULL;
+    }
+
+    struct dll_handle *dh = malloc(sizeof(struct dll_handle));
+    if (!dh) { dlclose(handle); return NULL; }
+    dh->name = strdup(dll_name);
+    dh->handle = handle;
+    dh->next = g_dll_list;
+    g_dll_list = dh;
+
+    WINUX_LOG("dlopen'd %s → %s", dll_name, so_name);
+    return handle;
+}
+
+static void dll_unload_all(void)
+{
+    struct dll_handle *d = g_dll_list;
+    while (d) {
+        struct dll_handle *next = d->next;
+        if (d->handle) dlclose(d->handle);
+        free(d->name);
+        free(d);
+        d = next;
+    }
+    g_dll_list = NULL;
+}
+
+static void *dll_resolve_symbol(const char *dll_name, const char *func_name)
+{
+    void *handle = dll_find_or_load(dll_name);
+    if (!handle) return NULL;
+    void *sym = dlsym(handle, func_name);
+    if (!sym) {
+        WINUX_LOG("dlsym(%s, %s) failed: %s", dll_name, func_name, dlerror());
+    }
+    return sym;
+}
+
+/* ==========================================================================
    Résolveur d'import
    ========================================================================== */
 
 /*
- * win32_bridge_resolve : cherche (dll, func) dans la table statique.
+ * win32_bridge_resolve : cherche (dll, func) dans la table statique,
+ * la table ordinal → nom, puis fallback dlopen.
  * Appelé par pe_loader.c pour chaque entrée IAT.
  *
- * Stratégie : parcours linéaire O(n). La table fait ~100 entrées,
- * ce qui est négligeable au chargement.
+ * Stratégie à 3 niveaux :
+ *   1. Table statique (~100 entrées, O(n))
+ *   2. Table ordinal → nom (~40 entrées, O(n))
+ *   3. dlopen fallback pour DLLs tierces
  *
  * Si le nom de fonction n'est pas trouvé, retourne NULL.
- * Le PE loader laissera alors l'entrée IAT à zéro, ce qui causera
- * un segfault si le programme tente d'appeler cette fonction.
  */
 void *win32_bridge_resolve(const char *dll, const char *func)
 {
     if (!dll || !func) return NULL;
+
+    if (func[0] == '#') {
+        uint16_t ord = (uint16_t)atoi(func + 1);
+        const char *name = ordinal_to_name(dll, ord);
+        if (name) {
+            for (IMPORT_ENTRY *e = import_table; e->dll != NULL; e++) {
+                if (strcasecmp(e->dll, dll) == 0 &&
+                    strcmp(e->name, name) == 0) {
+                    return e->fn;
+                }
+            }
+            void *sym = dll_resolve_symbol(dll, name);
+            if (sym) return sym;
+        }
+        return NULL;
+    }
 
     for (IMPORT_ENTRY *e = import_table; e->dll != NULL; e++) {
         if (strcasecmp(e->dll, dll) == 0 &&
@@ -213,6 +439,9 @@ void *win32_bridge_resolve(const char *dll, const char *func)
             return e->fn;
         }
     }
+
+    void *sym = dll_resolve_symbol(dll, func);
+    if (sym) return sym;
 
     return NULL;
 }
@@ -234,6 +463,9 @@ void win32_bridge_init(void)
 
     /* Initialiser la couche I/O (table de handles, traduction de chemins) */
     io_init();
+
+    /* Initialiser le registre HKCU */
+    reg_init();
 
     WINUX_LOG("Win32 bridge initialized, import resolver registered");
 }
@@ -507,6 +739,10 @@ WINAPI BOOL kernel32_WriteFile(
 WINAPI void kernel32_ExitProcess(UINT uExitCode)
 {
     WINUX_LOG("ExitProcess(%u)", uExitCode);
+
+    /* Sauvegarder le registre et décharger les DLLs */
+    reg_save();
+    dll_unload_all();
 
     /* Nettoyer la couche I/O */
     io_shutdown();
@@ -1116,4 +1352,105 @@ WINAPI void kernel32_Sleep(DWORD dwMilliseconds)
     }
 
     usleep(dwMilliseconds * 1000);
+}
+
+/* ==========================================================================
+   kernel32.dll — LoadLibraryA / GetProcAddress / FreeLibrary
+   ========================================================================== */
+
+WINAPI HANDLE kernel32_LoadLibraryA(LPCSTR lpLibFileName)
+{
+    if (!lpLibFileName) {
+        winux_set_last_error(ERROR_MOD_NOT_FOUND);
+        return NULL;
+    }
+
+    void *handle = dll_find_or_load(lpLibFileName);
+    if (!handle) {
+        winux_set_last_error(ERROR_MOD_NOT_FOUND);
+        WINUX_LOG("LoadLibraryA(%s) failed", lpLibFileName);
+        return NULL;
+    }
+
+    winux_set_last_error(ERROR_SUCCESS);
+    return (HANDLE)handle;
+}
+
+WINAPI void *kernel32_GetProcAddress(HANDLE hModule, LPCSTR lpProcName)
+{
+    if (!hModule || !lpProcName) {
+        winux_set_last_error(ERROR_INVALID_PARAMETER);
+        return NULL;
+    }
+
+    if ((uintptr_t)lpProcName & 0xFFFF0000) {
+        void *sym = dlsym(hModule, lpProcName);
+        if (sym) {
+            winux_set_last_error(ERROR_SUCCESS);
+            return sym;
+        }
+    } else {
+        uint16_t ord = (uint16_t)(uintptr_t)lpProcName;
+        char ord_name[32];
+        snprintf(ord_name, sizeof(ord_name), "#%u", ord);
+        struct dll_handle *d;
+        for (d = g_dll_list; d; d = d->next)
+            if (d->handle == hModule) break;
+
+        const char *func = d ? d->name : "kernel32.dll";
+        void *sym = win32_bridge_resolve(func, ord_name);
+        if (sym) {
+            winux_set_last_error(ERROR_SUCCESS);
+            return sym;
+        }
+    }
+
+    winux_set_last_error(ERROR_PROC_NOT_FOUND);
+    return NULL;
+}
+
+WINAPI BOOL kernel32_FreeLibrary(HANDLE hLibModule)
+{
+    if (!hLibModule) {
+        winux_set_last_error(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    winux_set_last_error(ERROR_SUCCESS);
+    return TRUE;
+}
+
+/* ==========================================================================
+   kernel32.dll — SEH support stubs
+   ========================================================================== */
+
+static PVOID g_top_exception_filter = NULL;
+
+WINAPI PVOID kernel32_SetUnhandledExceptionFilter(PVOID lpTopLevelExceptionFilter)
+{
+    PVOID old = g_top_exception_filter;
+    g_top_exception_filter = lpTopLevelExceptionFilter;
+    return old;
+}
+
+WINAPI LONG kernel32_UnhandledExceptionFilter(PVOID ExceptionInfo)
+{
+    WINUX_UNUSED(ExceptionInfo);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+WINAPI void kernel32_FatalAppExitA(UINT uAction, LPCSTR lpMessageText)
+{
+    WINUX_UNUSED(uAction);
+    WINUX_ERR("FatalAppExit: %s", lpMessageText ? lpMessageText : "(no message)");
+    _exit(1);
+}
+
+/* ==========================================================================
+   io_shutdown avec dlclose
+   ========================================================================== */
+
+void win32_bridge_shutdown(void)
+{
+    reg_shutdown();
+    dll_unload_all();
 }

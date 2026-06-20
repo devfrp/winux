@@ -536,6 +536,110 @@ typedef struct _UNICODE_STRING {
           __func__, __LINE__, ##__VA_ARGS__, strerror(errno))
 
 /* ==========================================================================
+   SEH — Structured Exception Handling
+   ========================================================================== */
+
+#define EXCEPTION_MAXIMUM_PARAMETERS   15
+
+#define EH_NONCONTINUABLE              0x01
+#define EH_UNWINDING                   0x02
+#define EH_EXIT_UNWIND                 0x04
+#define EH_STACK_INVALID               0x08
+#define EH_NESTED_CALL                 0x10
+
+#define EXCEPTION_NONCONTINUABLE       0x01
+#define EXCEPTION_UNWINDING            0x02
+#define EXCEPTION_EXIT_UNWIND          0x04
+#define EXCEPTION_STACK_INVALID        0x08
+#define EXCEPTION_NESTED_CALL          0x10
+
+#define EXCEPTION_ACCESS_VIOLATION     0xC0000005
+#define EXCEPTION_INT_DIVIDE_BY_ZERO   0xC0000094
+#define EXCEPTION_ILLEGAL_INSTRUCTION  0xC000001D
+#define EXCEPTION_STACK_OVERFLOW       0xC00000FD
+
+#define EXCEPTION_CONTINUE_EXECUTION   (-1)
+#define EXCEPTION_CONTINUE_SEARCH      0
+#define EXCEPTION_EXECUTE_HANDLER      1
+
+typedef struct _EXCEPTION_RECORD {
+    DWORD    ExceptionCode;
+    DWORD    ExceptionFlags;
+    PVOID    ExceptionRecord;
+    PVOID    ExceptionAddress;
+    DWORD    NumberParameters;
+    ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+} EXCEPTION_RECORD;
+
+typedef struct _CONTEXT64 {
+    DWORD64 P1Home;
+    DWORD64 P2Home;
+    DWORD64 P3Home;
+    DWORD64 P4Home;
+    DWORD64 P5Home;
+    DWORD64 P6Home;
+    DWORD64 ContextFlags;
+    DWORD64 MxCsr;
+    WORD    SegCs;
+    WORD    SegDs;
+    WORD    SegEs;
+    WORD    SegFs;
+    WORD    SegGs;
+    WORD    SegSs;
+    DWORD   EFlags;
+    DWORD64 Dr0;
+    DWORD64 Dr1;
+    DWORD64 Dr2;
+    DWORD64 Dr3;
+    DWORD64 Dr6;
+    DWORD64 Dr7;
+    DWORD64 Rax;
+    DWORD64 Rcx;
+    DWORD64 Rdx;
+    DWORD64 Rbx;
+    DWORD64 Rsp;
+    DWORD64 Rbp;
+    DWORD64 Rsi;
+    DWORD64 Rdi;
+    DWORD64 R8;
+    DWORD64 R9;
+    DWORD64 R10;
+    DWORD64 R11;
+    DWORD64 R12;
+    DWORD64 R13;
+    DWORD64 R14;
+    DWORD64 R15;
+    DWORD64 Rip;
+} CONTEXT64;
+
+typedef struct _EXCEPTION_REGISTRATION_RECORD {
+    PVOID Next;
+    PVOID Handler;
+} EXCEPTION_REGISTRATION_RECORD;
+
+typedef LONG (WINAPI *PVECTORED_EXCEPTION_HANDLER)(EXCEPTION_RECORD *);
+
+/* ==========================================================================
+   TLS — Thread Local Storage
+   ========================================================================== */
+
+#define DLL_PROCESS_ATTACH  1
+#define DLL_THREAD_ATTACH   2
+#define DLL_THREAD_DETACH   3
+#define DLL_PROCESS_DETACH  0
+
+#pragma pack(push, 1)
+typedef struct _IMAGE_TLS_DIRECTORY64 {
+    DWORD64 StartAddressOfRawData;
+    DWORD64 EndAddressOfRawData;
+    DWORD64 AddressOfIndex;
+    DWORD64 AddressOfCallBacks;
+    DWORD   SizeOfZeroFill;
+    DWORD   Characteristics;
+} IMAGE_TLS_DIRECTORY64;
+#pragma pack(pop)
+
+/* ==========================================================================
    Variables globales partagées
    ========================================================================== */
 

@@ -1,5 +1,5 @@
 Name:           winux
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        Windows PE executor for Linux — no Wine, no QEMU
 
@@ -42,5 +42,7 @@ make install DESTDIR=%{buildroot} PREFIX=/usr
 /usr/share/doc/winux/LICENSE
 
 %changelog
+* Sat Jun 20 2025 winux contributors
+- v1.0.1: Registry HKCU, TLS callbacks, imports by ordinal, dlopen DLL fallback, SEH
 * Mon Jun 17 2025 winux contributors
 - Initial release v1.0.0

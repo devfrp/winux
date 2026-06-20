@@ -45,6 +45,7 @@ SOURCES := $(SRCDIR)/pe_loader.c \
            $(SRCDIR)/signal_passthrough.c \
            $(SRCDIR)/seccomp_filter.c \
            $(SRCDIR)/proc_compat.c \
+           $(SRCDIR)/registry.c \
            $(SRCDIR)/winexec.c
 
 HEADERS := $(INCDIR)/winux.h \
@@ -56,7 +57,8 @@ HEADERS := $(INCDIR)/winux.h \
            $(INCDIR)/thread_model.h \
            $(INCDIR)/signal_passthrough.h \
            $(INCDIR)/seccomp_filter.h \
-           $(INCDIR)/proc_compat.h
+           $(INCDIR)/proc_compat.h \
+           $(INCDIR)/registry.h
 
 OBJECTS := $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SOURCES))
 
@@ -164,7 +166,7 @@ uninstall:
 # Packaging
 # ==========================================================================
 
-PKG_VERSION := 1.0.0
+PKG_VERSION := 1.0.1
 PKG_NAME    := winux
 DISTDIR     := $(BUILDDIR)/dist
 PKG_STAGING := $(DISTDIR)/staging

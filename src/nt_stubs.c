@@ -28,6 +28,9 @@
 #include <dirent.h>
 #include <time.h>
 
+/* TLS callbacks extern (set by pe_loader.c) */
+extern DWORD64 *g_tls_callback_array;
+
 /* ==========================================================================
    Helpers internes — conversion d'erreurs
    ========================================================================== */
@@ -618,6 +621,15 @@ WINAPI NTSTATUS NtCreateThread(
                   "thread started immediately");
     }
 
+    /* TLS callbacks: DLL_THREAD_ATTACH */
+    if (g_tls_callback_array) {
+        typedef void (WINAPI *tls_cb_fn)(PVOID, DWORD, PVOID);
+        for (DWORD64 *cb = g_tls_callback_array; *cb != 0; cb++) {
+            tls_cb_fn fn = (tls_cb_fn)(uintptr_t)*cb;
+            fn((PVOID)(uintptr_t)0x400000, DLL_THREAD_ATTACH, NULL);
+        }
+    }
+
     /* On n'a pas de table de handles pour les threads pour l'instant,
        on retourne le tid casté en HANDLE */
     *ThreadHandle = (HANDLE)(uintptr_t)tid;
@@ -657,6 +669,15 @@ WINAPI NTSTATUS NtTerminateThread(
     (void)ThreadHandle;
 
     WINUX_LOG("NtTerminateThread: exit code 0x%08X", ExitStatus);
+
+    /* TLS callbacks: DLL_THREAD_DETACH */
+    if (g_tls_callback_array) {
+        typedef void (WINAPI *tls_cb_fn)(PVOID, DWORD, PVOID);
+        for (DWORD64 *cb = g_tls_callback_array; *cb != 0; cb++) {
+            tls_cb_fn fn = (tls_cb_fn)(uintptr_t)*cb;
+            fn((PVOID)(uintptr_t)0x400000, DLL_THREAD_DETACH, NULL);
+        }
+    }
 
     /*
      * On ne peut pas vraiment terminer un thread POSIX proprement

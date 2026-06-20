@@ -118,7 +118,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: winux-${{ github.ref_name }}-x86_64.tar.gz
-          path: build/dist/winux-1.0.0-x86_64.tar.gz
+          path: build/dist/winux-1.0.1-x86_64.tar.gz
 
   # ── Package: .deb ────────────────────────────────────────────────
   package-deb:
@@ -135,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: winux_${{ github.ref_name }}_amd64.deb
-          path: build/dist/winux_1.0.0_amd64.deb
+          path: build/dist/winux_1.0.1_amd64.deb
 
   # ── Package: .rpm ────────────────────────────────────────────────
   package-rpm:
@@ -176,26 +176,35 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           body: |
-            ## winux v1.0.0 — Native Windows PE executor for Linux
+            ## winux v1.0.1 — Native Windows PE executor for Linux
 
             Windows PE executor for Linux — no Wine, no VM, no container.
 
+            *New in v1.0.1: Registry stubs (HKCU), TLS callbacks, imports by ordinal, third-party DLL resolution (dlopen), SEH crash recovery*
+
             ### Packages
-            - `winux-1.0.0-x86_64.tar.gz` — generic Linux tarball
-            - `winux_1.0.0_amd64.deb` — Debian/Ubuntu
-            - `winux-1.0.0-1.x86_64.rpm` — Fedora/RHEL
+            - `winux-1.0.1-x86_64.tar.gz` — generic Linux tarball
+            - `winux_1.0.1_amd64.deb` — Debian/Ubuntu
+            - `winux-1.0.1-1.x86_64.rpm` — Fedora/RHEL
 
             ### Install
             ```bash
             # .deb
-            sudo dpkg -i winux_1.0.0_amd64.deb
+            sudo dpkg -i winux_1.0.1_amd64.deb
 
             # .rpm
-            sudo rpm -i winux-1.0.0-1.x86_64.rpm
+            sudo rpm -i winux-1.0.1-1.x86_64.rpm
 
             # .tar.gz
-            tar xzf winux-1.0.0-x86_64.tar.gz -C /
+            tar xzf winux-1.0.1-x86_64.tar.gz -C /
             ```
+
+            ### Quick Start
+            ```bash
+            winexec --debug prog.exe
+            ```
+
+            See [README.md](https://github.com/devfrp/winux) for full documentation.
 
             ### Quick Start
             ```bash

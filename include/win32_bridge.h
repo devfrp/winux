@@ -34,6 +34,8 @@
  */
 void win32_bridge_init(void);
 
+void win32_bridge_shutdown(void);
+
 /*
  * Fonction de résolution d'import.
  * Appelée par pe_loader.c pour chaque entrée IAT.
@@ -156,5 +158,30 @@ WINAPI BOOL kernel32_ReadConsoleA(
     PVOID   lpReserved
 );
 WINAPI void kernel32_Sleep(DWORD dwMilliseconds);
+
+/* kernel32.dll — Registry functions */
+WINAPI LONG kernel32_RegOpenKeyExA(HKEY hKey, LPCSTR lpSubKey, DWORD ulOptions,
+                                    DWORD samDesired, HKEY *phkResult);
+WINAPI LONG kernel32_RegQueryValueExA(HKEY hKey, LPCSTR lpValueName,
+                                       DWORD *lpReserved, DWORD *lpType,
+                                       BYTE *lpData, DWORD *lpcbData);
+WINAPI LONG kernel32_RegSetValueExA(HKEY hKey, LPCSTR lpValueName,
+                                     DWORD Reserved, DWORD dwType,
+                                     const BYTE *lpData, DWORD cbData);
+WINAPI LONG kernel32_RegCloseKey(HKEY hKey);
+WINAPI LONG kernel32_RegCreateKeyExA(HKEY hKey, LPCSTR lpSubKey, DWORD Reserved,
+                                      LPSTR lpClass, DWORD dwOptions,
+                                      DWORD samDesired, void *lpSecurityAttributes,
+                                      HKEY *phkResult, DWORD *lpdwDisposition);
+
+/* kernel32.dll — Third-party DLL resolution */
+WINAPI HANDLE kernel32_LoadLibraryA(LPCSTR lpLibFileName);
+WINAPI void  *kernel32_GetProcAddress(HANDLE hModule, LPCSTR lpProcName);
+WINAPI BOOL   kernel32_FreeLibrary(HANDLE hLibModule);
+
+/* kernel32.dll — SEH support */
+WINAPI LONG kernel32_UnhandledExceptionFilter(PVOID ExceptionInfo);
+WINAPI PVOID kernel32_SetUnhandledExceptionFilter(PVOID lpTopLevelExceptionFilter);
+WINAPI void   kernel32_FatalAppExitA(UINT uAction, LPCSTR lpMessageText);
 
 #endif /* WIN32_BRIDGE_H */

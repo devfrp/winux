@@ -261,6 +261,7 @@ int main(int argc, char **argv)
 
     thread_model_shutdown();
     signal_passthrough_shutdown();
+    win32_bridge_shutdown();
     pe_unload(pe);
     io_shutdown();
     mem_shutdown();
